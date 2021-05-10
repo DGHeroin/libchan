@@ -2,34 +2,47 @@ package main
 
 import (
     "fmt"
+    "github.com/DGHeroin/libchan"
     "github.com/DGHeroin/libchan/kcp"
     "log"
     "time"
 )
 
 func client() {
-    ch := kcp.NewKCP("kcpc://127.0.0.1:6000?password=aoe&salt=123")
+    cc := kcp.NewKCP("kcpc://127.0.0.1:6000?password=aoe&salt=123")
+    ch, err := cc.Dial()
+    if err != nil {
 
-    for {
-        time.Sleep(time.Second)
-        ch.Send([]byte(fmt.Sprintf("Hello:%v", time.Now())))
     }
-}
-func server() {
-    ch := kcp.NewKCP("kcp://127.0.0.1:6000?password=aoe&salt=123")
     go func() {
         for {
             time.Sleep(time.Second)
             ch.Send([]byte(fmt.Sprintf("Hello:%v", time.Now())))
         }
     }()
-
     for {
-        data, err := ch.Recv()
+        data, err := ch.Read()
         if err != nil {
             return
         }
-        log.Println("recv:", string(data))
+
+        log.Println("client recv:", string(data))
+    }
+}
+func server() {
+    ch := kcp.NewKCP("kcp://127.0.0.1:6000?password=aoe&salt=123")
+    for {
+        remote := ch.Accept()
+        go func(remote libchan.Chan) {
+            for {
+                data, err := remote.Read()
+                if err != nil {
+                    return
+                }
+                log.Println("server recv:", string(data))
+                remote.Send([]byte("hello"))
+            }
+        }(remote)
     }
 }
 
