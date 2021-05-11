@@ -9,7 +9,7 @@ import (
 )
 
 func client() {
-    cc := kcp.NewKCP("kcpc://127.0.0.1:6000?password=aoe&salt=123")
+    cc := kcp.New("kcpc://127.0.0.1:6000?password=aoe&salt=123")
     ch, err := cc.Dial()
     if err != nil {
 
@@ -30,7 +30,7 @@ func client() {
     }
 }
 func server() {
-    ch := kcp.NewKCP("kcp://127.0.0.1:6000?password=aoe&salt=123")
+    ch := kcp.New("kcp://127.0.0.1:6000?password=aoe&salt=123")
     for {
         remote := ch.Accept()
         go func(remote libchan.Chan) {
@@ -40,7 +40,7 @@ func server() {
                     return
                 }
                 log.Println("server recv:", string(data))
-                remote.Send([]byte("hello"))
+                remote.Send(data)
             }
         }(remote)
     }

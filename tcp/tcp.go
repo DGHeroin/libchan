@@ -1,19 +1,17 @@
-package kcp
+package tcp
 
 import (
     "context"
-    "crypto/sha1"
     . "github.com/DGHeroin/libchan"
     "github.com/DGHeroin/libchan/common"
-    "github.com/xtaci/kcp-go/v5"
-    "golang.org/x/crypto/pbkdf2"
     "log"
+    "net"
     "net/url"
     "sync"
 )
 
 func New(uri string) Transport {
-    k := &kcpTransport{
+    k := &tcpTransport{
         uri:      uri,
         acceptCh: make(chan Chan, 10),
     }
@@ -22,20 +20,20 @@ func New(uri string) Transport {
 }
 
 type (
-    kcpTransport struct {
+    tcpTransport struct {
         ctx      context.Context
         uri      string
         u        *url.URL
         acceptCh chan Chan
-        once sync.Once
+        once     sync.Once
     }
 )
 
-func (p *kcpTransport) Context() context.Context {
+func (p *tcpTransport) Context() context.Context {
     return p.ctx
 }
 
-func (p *kcpTransport) init() {
+func (p *tcpTransport) init() {
     p.ctx = context.Background()
     u, err := url.Parse(p.uri)
     if err != nil {
@@ -44,15 +42,11 @@ func (p *kcpTransport) init() {
     p.u = u
 }
 
-func (p *kcpTransport) serve() {
+func (p *tcpTransport) serve() {
     u := p.u
-    password := u.Query().Get("password")
-    salt := u.Query().Get("salt")
-    key := pbkdf2.Key([]byte(password), []byte(salt), 1024, 32, sha1.New)
-    block, _ := kcp.NewAESBlockCrypt(key)
-    if listener, err := kcp.ListenWithOptions(u.Host, block, 10, 3); err == nil {
+    if listener, err := net.Listen("tcp", u.Host); err == nil {
         for {
-            s, err := listener.AcceptKCP()
+            s, err := listener.Accept()
             if err != nil {
                 log.Fatal(err)
             }
@@ -63,7 +57,7 @@ func (p *kcpTransport) serve() {
     }
 }
 
-func (p *kcpTransport) handleAcceptSession(conn *kcp.UDPSession) {
+func (p *tcpTransport) handleAcceptSession(conn net.Conn) {
     cli := common.NewConn(p.ctx, conn)
     go func() {
         p.acceptCh <- cli
@@ -71,7 +65,7 @@ func (p *kcpTransport) handleAcceptSession(conn *kcp.UDPSession) {
     cli.DoRead()
 }
 
-func (p *kcpTransport) Accept() Chan {
+func (p *tcpTransport) Accept() Chan {
     p.once.Do(func() {
         go p.serve()
     })
@@ -79,13 +73,9 @@ func (p *kcpTransport) Accept() Chan {
     return cli
 }
 
-func (p *kcpTransport) Dial() (Chan, error) {
+func (p *tcpTransport) Dial() (Chan, error) {
     u := p.u
-    password := u.Query().Get("password")
-    salt := u.Query().Get("salt")
-    key := pbkdf2.Key([]byte(password), []byte(salt), 1024, 32, sha1.New)
-    block, _ := kcp.NewAESBlockCrypt(key)
-    if conn, err := kcp.DialWithOptions(u.Host, block, 10, 3); err == nil {
+    if conn, err := net.Dial("tcp", u.Host); err == nil {
         cli := common.NewConn(p.ctx, conn)
         go func() {
             defer conn.Close()
