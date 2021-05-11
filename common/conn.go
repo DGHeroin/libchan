@@ -2,12 +2,10 @@ package common
 
 import (
     "bytes"
-    "container/list"
     "context"
     "encoding/binary"
     "io"
     "net"
-    "sync"
     "time"
 )
 
@@ -15,8 +13,9 @@ type (
     Conn struct {
         ctx      context.Context
         chRecv   chan []byte
-        sendList list.List
-        mu       sync.Mutex
+        //sendList list.List
+        //mu       sync.Mutex
+        mq *MQ
     }
 )
 func NewConn(ctx context.Context, conn net.Conn) *Conn {
@@ -24,6 +23,7 @@ func NewConn(ctx context.Context, conn net.Conn) *Conn {
     p := &Conn{
         ctx:    ctx2,
         chRecv: make(chan []byte, 100),
+        mq: NewMQ(),
     }
     //p.cond = sync.NewCond(&p.mu)
     go p.startBatchingSend()
@@ -39,13 +39,10 @@ func (p *Conn) Send(data []byte) error {
 }
 
 func (p *Conn) SendBatching(data []byte) error {
-    p.mu.Lock()
-    defer p.mu.Unlock()
-
     header := make([]byte, 4)
     binary.BigEndian.PutUint32(header, uint32(len(data)))
     msg := append(header, data...)
-    p.sendList.PushBack(msg)
+    p.mq.Add(msg)
 
     return nil
 }
@@ -82,33 +79,25 @@ func (p *Conn) DoRead() {
 
 func (p *Conn) startBatchingSend() {
     for {
-        time.Sleep(time.Millisecond * 10)
         p.doBatchingSend()
     }
 }
 func (p *Conn) doBatchingSend() {
-    p.mu.Lock()
-    defer p.mu.Unlock()
-   // startTime := time.Now()
     conn := p.ctx.Value("conn").(net.Conn)
-
-    sz := p.sendList.Len()
-    if sz == 0 {
+    arr := p.mq.Wait(time.Millisecond, 10, 10)
+    if len(arr) == 0 {
         return
     }
 
     bigData := bytes.NewBuffer(nil)
-    it := p.sendList.Front()
-    n := 0
-    for it != nil {
-        data := it.Value.([]byte)
+    for _, val := range arr {
+        data := val.([]byte)
         bigData.Write(data)
-        it = it.Next()
-        n++
     }
-    p.sendList.Init()
-
     conn.Write(bigData.Bytes())
+}
 
-//    log.Println(bigData.Len(),time.Now().Sub(startTime))
+func (p*Conn) Close() error {
+    conn := p.ctx.Value("conn").(net.Conn)
+    return conn.Close()
 }

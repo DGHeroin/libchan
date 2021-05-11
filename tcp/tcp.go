@@ -26,6 +26,7 @@ type (
         u        *url.URL
         acceptCh chan Chan
         once     sync.Once
+        closer   Closer
     }
 )
 
@@ -77,6 +78,7 @@ func (p *tcpTransport) Dial() (Chan, error) {
     u := p.u
     if conn, err := net.Dial("tcp", u.Host); err == nil {
         cli := common.NewConn(p.ctx, conn)
+        p.closer = cli
         go func() {
             defer conn.Close()
             cli.DoRead()
@@ -86,4 +88,7 @@ func (p *tcpTransport) Dial() (Chan, error) {
         return nil, err
     }
 
+}
+func (p *tcpTransport) Close() error {
+    return p.closer.Close()
 }

@@ -27,7 +27,8 @@ type (
         uri      string
         u        *url.URL
         acceptCh chan Chan
-        once sync.Once
+        once     sync.Once
+        closer   Closer
     }
 )
 
@@ -51,6 +52,7 @@ func (p *kcpTransport) serve() {
     key := pbkdf2.Key([]byte(password), []byte(salt), 1024, 32, sha1.New)
     block, _ := kcp.NewAESBlockCrypt(key)
     if listener, err := kcp.ListenWithOptions(u.Host, block, 10, 3); err == nil {
+        p.closer = listener
         for {
             s, err := listener.AcceptKCP()
             if err != nil {
@@ -87,6 +89,7 @@ func (p *kcpTransport) Dial() (Chan, error) {
     block, _ := kcp.NewAESBlockCrypt(key)
     if conn, err := kcp.DialWithOptions(u.Host, block, 10, 3); err == nil {
         cli := common.NewConn(p.ctx, conn)
+        p.closer = cli
         go func() {
             defer conn.Close()
             cli.DoRead()
@@ -96,4 +99,7 @@ func (p *kcpTransport) Dial() (Chan, error) {
         return nil, err
     }
 
+}
+func (p *kcpTransport) Close() error {
+    return p.closer.Close()
 }

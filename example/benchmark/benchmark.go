@@ -35,10 +35,11 @@ func client() {
             log.Println("qps", s, r, p, "==>", string(latestBytes), common.ByteSize(uint64(b)))
         }
     }()
-    sendData := make([]byte, 1000)
+    sendData := make([]byte, 1)
     go func() {
         for {
-            ch.SendBatching(sendData)
+            //ch.SendBatching(sendData)
+            ch.Send(sendData)
             atomic.AddUint32(&sendQPS, 1)
         }
     }()
@@ -63,7 +64,7 @@ func server() {
                 atomic.AddUint32(&pktQPS, 1)
                 latestBytes = data
                 atomic.AddUint32(&bandwidth, uint32(len(data)))
-                //remote.Send(data)
+                remote.Send(data)
             }
         }(remote)
     }
