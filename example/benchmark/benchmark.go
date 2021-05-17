@@ -15,7 +15,7 @@ var (
     pktQPS      uint32
     bandwidth   uint32
     latestBytes []byte
-    rawurl = "tcp://127.0.0.1:6000?password=aoe&salt=123"
+    rawurl = "kcp://127.0.0.1:6000?password=aoe&salt=123"
 )
 
 func client() {

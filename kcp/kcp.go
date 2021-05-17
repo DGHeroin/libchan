@@ -74,6 +74,8 @@ func (p *kcpTransport) handleAcceptSession(conn *kcp.UDPSession) {
         ReadTimeout: common.UrlDurationSecond(u, "rtime", time.Second*3),
         WriteTimeout: common.UrlDurationSecond(u, "wtime", time.Second*3),
     }
+    p.setupConn(conn)
+
     cli := common.NewConn(p.ctx, conn, opt)
     go func() {
         p.acceptCh <- cli
@@ -87,6 +89,18 @@ func (p *kcpTransport) Accept() Chan {
     })
     cli := <-p.acceptCh
     return cli
+}
+func (p *kcpTransport) setupConn(conn *kcp.UDPSession) {
+    //普通模式
+    //SetNoDelay(32, 32, 0, 40, 0, 0, 100, 1400)
+    //极速模式
+    //SetNoDelay(32, 32, 1, 10, 2, 1, 30, 1400)
+
+    //conn.SetNoDelay(1, 10, 2, 1)
+    //conn.SetACKNoDelay(true)
+    //conn.SetStreamMode(true)
+    //conn.SetWindowSize(4096, 4096)
+    //_ = conn.SetReadBuffer(4096)
 }
 
 func (p *kcpTransport) Dial() (Chan, error) {
@@ -115,6 +129,7 @@ func (p *kcpTransport) Dial() (Chan, error) {
         if conn, err := kcp.DialWithOptions(u.Host, block, 10, 3); err == nil {
             p.closer = cli
             cli.SetConn(conn)
+            p.setupConn(conn)
             go func() {
                 isConnected = true
                 defer func() {
