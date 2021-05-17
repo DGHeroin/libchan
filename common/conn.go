@@ -4,46 +4,77 @@ import (
     "bytes"
     "context"
     "encoding/binary"
+    "fmt"
     "io"
+    "log"
     "net"
     "time"
 )
 
 type (
     Conn struct {
-        ctx      context.Context
-        chRecv   chan []byte
-        //sendList list.List
-        //mu       sync.Mutex
-        mq *MQ
+        ctx    context.Context
+        conn   net.Conn
+        chRecv chan []byte
+        mq     *MQ
+        err    error
+        opt    *ConnOption
+    }
+    ConnOption struct {
+        AutoReconnect bool // 自动重连
+        ReadTimeout   time.Duration
+        WriteTimeout  time.Duration
+        Batching      bool
     }
 )
-func NewConn(ctx context.Context, conn net.Conn) *Conn {
-    ctx2 := context.WithValue(ctx, "conn", conn)
-    p := &Conn{
-        ctx:    ctx2,
-        chRecv: make(chan []byte, 100),
-        mq: NewMQ(),
+
+func defaultConnOption() *ConnOption {
+    return &ConnOption{
+        AutoReconnect: true,
+        ReadTimeout:   time.Second * 30,
+        WriteTimeout:  time.Second * 30,
+        Batching:      true,
     }
-    //p.cond = sync.NewCond(&p.mu)
+}
+
+func NewConn(ctx context.Context, conn net.Conn, opt *ConnOption) *Conn {
+    if opt == nil {
+        opt = defaultConnOption()
+    }
+    p := &Conn{
+        ctx:    ctx,
+        conn:   conn,
+        chRecv: make(chan []byte, 100),
+        mq:     NewMQ(),
+        opt:    opt,
+    }
     go p.startBatchingSend()
     return p
 }
+
+func (p *Conn) SetConn(conn net.Conn) {
+    p.conn = conn
+}
+
 func (p *Conn) Send(data []byte) error {
-    conn := p.ctx.Value("conn").(net.Conn)
-    header := make([]byte, 4)
+    if p.opt.Batching {
+        return p.sendBatching(data)
+    }
+    header := make([]byte, 5)
+    header[4] = 0x98
     binary.BigEndian.PutUint32(header, uint32(len(data)))
     msg := append(header, data...)
-    _, err := conn.Write(msg)
+    _ = p.conn.SetWriteDeadline(time.Now().Add(p.opt.WriteTimeout))
+    _, err := p.conn.Write(msg)
     return err
 }
 
-func (p *Conn) SendBatching(data []byte) error {
-    header := make([]byte, 4)
+func (p *Conn) sendBatching(data []byte) error {
+    header := make([]byte, 5)
+    header[4] = 0x98
     binary.BigEndian.PutUint32(header, uint32(len(data)))
     msg := append(header, data...)
     p.mq.Add(msg)
-
     return nil
 }
 
@@ -60,20 +91,30 @@ func (p *Conn) Context() context.Context {
 }
 
 func (p *Conn) DoRead() {
-    conn := p.ctx.Value("conn").(net.Conn)
     for {
-        header := make([]byte, 4)
-        n, err := io.ReadFull(conn, header)
+        p.conn.SetReadDeadline(time.Now().Add(p.opt.ReadTimeout))
+        header := make([]byte, 5)
+        n, err := io.ReadFull(p.conn, header)
         if err != nil {
+            p.err = err
             return
         }
-        size := binary.BigEndian.Uint32(header)
-        body := make([]byte, size)
-        n, err = io.ReadFull(conn, body)
-        if err != nil {
-            return
+        msgT := header[4]
+        switch msgT {
+        case 0x98:
+            size := binary.BigEndian.Uint32(header)
+            body := make([]byte, size)
+            n, err = io.ReadFull(p.conn, body)
+            if err != nil {
+                p.err = err
+                return
+            }
+            p.chRecv <- body[:n]
+        default:
+            log.Println(msgT)
+            p.err = fmt.Errorf("unsupport msg type")
         }
-        p.chRecv <- body[:n]
+
     }
 }
 
@@ -83,7 +124,6 @@ func (p *Conn) startBatchingSend() {
     }
 }
 func (p *Conn) doBatchingSend() {
-    conn := p.ctx.Value("conn").(net.Conn)
     arr := p.mq.Wait(time.Millisecond, 10, 10)
     if len(arr) == 0 {
         return
@@ -94,10 +134,17 @@ func (p *Conn) doBatchingSend() {
         data := val.([]byte)
         bigData.Write(data)
     }
-    conn.Write(bigData.Bytes())
+    _, err := p.conn.Write(bigData.Bytes())
+    if err != nil {
+        p.err = err
+    }
 }
 
-func (p*Conn) Close() error {
+func (p *Conn) Close() error {
     conn := p.ctx.Value("conn").(net.Conn)
     return conn.Close()
+}
+
+func (p *Conn) Error() error {
+    return p.err
 }

@@ -59,7 +59,7 @@ func (p *tcpTransport) serve() {
 }
 
 func (p *tcpTransport) handleAcceptSession(conn net.Conn) {
-    cli := common.NewConn(p.ctx, conn)
+    cli := common.NewConn(p.ctx, conn, nil)
     go func() {
         p.acceptCh <- cli
     }()
@@ -77,7 +77,7 @@ func (p *tcpTransport) Accept() Chan {
 func (p *tcpTransport) Dial() (Chan, error) {
     u := p.u
     if conn, err := net.Dial("tcp", u.Host); err == nil {
-        cli := common.NewConn(p.ctx, conn)
+        cli := common.NewConn(p.ctx, conn, nil)
         p.closer = cli
         go func() {
             defer conn.Close()

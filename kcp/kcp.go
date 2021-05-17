@@ -10,6 +10,8 @@ import (
     "log"
     "net/url"
     "sync"
+    "sync/atomic"
+    "time"
 )
 
 func New(uri string) Transport {
@@ -66,7 +68,13 @@ func (p *kcpTransport) serve() {
 }
 
 func (p *kcpTransport) handleAcceptSession(conn *kcp.UDPSession) {
-    cli := common.NewConn(p.ctx, conn)
+    u := p.u
+    opt := &common.ConnOption{
+        AutoReconnect: common.UrlBool(u, "auto", true),
+        ReadTimeout: common.UrlDurationSecond(u, "rtime", time.Second*3),
+        WriteTimeout: common.UrlDurationSecond(u, "wtime", time.Second*3),
+    }
+    cli := common.NewConn(p.ctx, conn, opt)
     go func() {
         p.acceptCh <- cli
     }()
@@ -83,22 +91,54 @@ func (p *kcpTransport) Accept() Chan {
 
 func (p *kcpTransport) Dial() (Chan, error) {
     u := p.u
-    password := u.Query().Get("password")
-    salt := u.Query().Get("salt")
+    password := common.UrlString(u, "password", "")
+    salt := common.UrlString(u, "salt", "")
     key := pbkdf2.Key([]byte(password), []byte(salt), 1024, 32, sha1.New)
     block, _ := kcp.NewAESBlockCrypt(key)
-    if conn, err := kcp.DialWithOptions(u.Host, block, 10, 3); err == nil {
-        cli := common.NewConn(p.ctx, conn)
-        p.closer = cli
-        go func() {
-            defer conn.Close()
-            cli.DoRead()
-        }()
-        return cli, nil
-    } else {
-        return nil, err
-    }
 
+    opt := &common.ConnOption{
+        AutoReconnect: common.UrlBool(u, "auto", true),
+        ReadTimeout: common.UrlDurationSecond(u, "rtime", time.Second*3),
+        WriteTimeout: common.UrlDurationSecond(u, "wtime", time.Second*3),
+    }
+    cli := common.NewConn(p.ctx, nil, opt)
+    var (
+        dial        func() error
+        isDialing   int32
+        isConnected = false
+    )
+
+    dial = func() error {
+        if atomic.LoadInt32(&isDialing) == 1 {
+            return nil
+        }
+        if conn, err := kcp.DialWithOptions(u.Host, block, 10, 3); err == nil {
+            p.closer = cli
+            cli.SetConn(conn)
+            go func() {
+                isConnected = true
+                defer func() {
+                    conn.Close()
+                    if cli.Error() != nil && opt.AutoReconnect {
+                        time.AfterFunc(time.Second*5, func() {
+                            dial()
+                        })
+                    }
+                }()
+                cli.DoRead()
+            }()
+            return nil
+        } else {
+            atomic.StoreInt32(&isDialing, 0)
+            if isConnected == true && opt.AutoReconnect { // 曾经链接成功
+                time.AfterFunc(time.Second*5, func() {
+                    dial()
+                })
+            }
+            return err
+        }
+    }
+    return cli, dial()
 }
 func (p *kcpTransport) Close() error {
     return p.closer.Close()

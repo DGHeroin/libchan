@@ -2,8 +2,10 @@ package common
 
 import (
     "errors"
+    "net/url"
     "strconv"
     "strings"
+    "time"
     "unicode"
 )
 
@@ -113,4 +115,77 @@ func ToBytes(s string) (uint64, error) {
     default:
         return 0, invalidByteQuantityError
     }
+}
+
+func UrlString(u *url.URL, key string, defaultValue string) string {
+    v := u.Query().Get(key)
+    if v == "" {
+        return defaultValue
+    }
+    return v
+}
+
+func UrlDuration(u *url.URL, key string, defaultValue time.Duration) time.Duration {
+    v := u.Query().Get(key)
+    if v == "" {
+        return defaultValue
+    }
+    if vv, err := strconv.ParseInt(v, 10, 64); err != nil {
+        return defaultValue
+    } else {
+        return time.Duration(vv)
+    }
+}
+func UrlDurationSecond(u *url.URL, key string, defaultValue time.Duration) time.Duration {
+    v := u.Query().Get(key)
+    if v == "" {
+        return defaultValue
+    }
+    if vv, err := strconv.ParseInt(v, 10, 64); err != nil {
+        return defaultValue
+    } else {
+        return time.Duration(vv) * time.Second
+    }
+}
+
+func UrlInt(u *url.URL, key string, defaultValue int) int {
+    v := u.Query().Get(key)
+    if v == "" {
+        return defaultValue
+    }
+    if vv, err := strconv.ParseInt(v, 10, 64); err != nil {
+        return defaultValue
+    } else {
+        return int(vv)
+    }
+}
+
+func UrlInt64(u url.URL, key string, defaultValue int64) int64 {
+    v := u.Query().Get(key)
+    if v == "" {
+        return defaultValue
+    }
+    if vv, err := strconv.ParseInt(v, 10, 64); err != nil {
+        return defaultValue
+    } else {
+        return int64(vv)
+    }
+}
+func UrlFloat(u url.URL, key string, defaultValue float64) float64 {
+    v := u.Query().Get(key)
+    if v == "" {
+        return defaultValue
+    }
+    if vv, err := strconv.ParseFloat(v, 10); err != nil {
+        return defaultValue
+    } else {
+        return vv
+    }
+}
+func UrlBool(u *url.URL, key string, defaultValue bool) bool {
+    v := u.Query().Get(key)
+    if v == "" {
+        return defaultValue
+    }
+    return strings.ToLower(v) == "true"
 }

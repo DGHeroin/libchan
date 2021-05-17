@@ -9,7 +9,7 @@ import (
 )
 
 func client() {
-    cc := kcp.New("kcpc://127.0.0.1:6000?password=aoe&salt=123")
+    cc := kcp.New("kcp://127.0.0.1:6000?password=aoe&salt=123")
     ch, err := cc.Dial()
     if err != nil {
 
