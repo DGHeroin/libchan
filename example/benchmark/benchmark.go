@@ -15,7 +15,7 @@ var (
     pktQPS      uint32
     bandwidth   uint32
     latestBytes []byte
-    rawurl = "kcp://127.0.0.1:6000?password=aoe&salt=123"
+    rawurl = "tcp://127.0.0.1:6000?password=aoe&salt=123"
 )
 
 func client() {
@@ -33,12 +33,12 @@ func client() {
             p := atomic.SwapUint32(&pktQPS, 0)
             b := atomic.SwapUint32(&bandwidth, 0)
             log.Println("qps", s, r, p, "==>", string(latestBytes), common.ByteSize(uint64(b)))
+            log.Println(">>>", ch)
         }
     }()
-    sendData := make([]byte, 1)
+    sendData := make([]byte, 1024)
     go func() {
         for {
-            //ch.SendBatching(sendData)
             ch.Send(sendData)
             atomic.AddUint32(&sendQPS, 1)
         }

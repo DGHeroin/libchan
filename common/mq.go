@@ -5,21 +5,37 @@ import (
     "sync"
     "time"
 )
+
 // 带超时的消息队列
 type MQ struct {
-    mu   sync.Mutex
-    cond *sync.Cond
-    list *list.List
+    mu      sync.Mutex
+    cond    *sync.Cond
+    list    *list.List
+    maxWait int
 }
 
-func NewMQ() *MQ {
-    m := &MQ{}
+func NewMQ(maxWait int) *MQ {
+    m := &MQ{
+        maxWait: maxWait,
+    }
     m.cond = sync.NewCond(&m.mu)
     m.list = list.New()
     return m
 }
-
+func (m *MQ) Len() int {
+    m.mu.Lock()
+    sz := m.list.Len()
+    m.mu.Unlock()
+    return sz
+}
 func (m *MQ) Add(value ...interface{}) {
+    for m.Len() > m.maxWait {
+        m.mu.Lock()
+        time.Sleep(time.Nanosecond)
+        m.cond.Signal()
+        m.mu.Unlock()
+    }
+
     m.mu.Lock()
     for _, val := range value {
         m.list.PushBack(val)

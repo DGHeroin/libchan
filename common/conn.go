@@ -13,18 +13,21 @@ import (
 
 type (
     Conn struct {
-        ctx    context.Context
-        conn   net.Conn
-        chRecv chan []byte
-        mq     *MQ
-        err    error
-        opt    *ConnOption
+        ctx          context.Context
+        conn         net.Conn
+        chRecv       chan []byte
+        mq           *MQ
+        err          error
+        opt          *ConnOption
+        lastBatching int
     }
     ConnOption struct {
         AutoReconnect bool // 自动重连
         ReadTimeout   time.Duration
         WriteTimeout  time.Duration
-        Batching      bool
+        Batching     bool
+        BatchingWait int
+        BatchingN    int
     }
 )
 
@@ -34,6 +37,8 @@ func defaultConnOption() *ConnOption {
         ReadTimeout:   time.Second * 30,
         WriteTimeout:  time.Second * 30,
         Batching:      true,
+        BatchingWait:  1000 * 100,
+        BatchingN:     1000 * 100,
     }
 }
 
@@ -45,7 +50,7 @@ func NewConn(ctx context.Context, conn net.Conn, opt *ConnOption) *Conn {
         ctx:    ctx,
         conn:   conn,
         chRecv: make(chan []byte, 100),
-        mq:     NewMQ(),
+        mq:     NewMQ(opt.BatchingWait),
         opt:    opt,
     }
     go p.startBatchingSend()
@@ -124,12 +129,13 @@ func (p *Conn) startBatchingSend() {
     }
 }
 func (p *Conn) doBatchingSend() {
-    arr := p.mq.Wait(time.Millisecond, 10, 10)
+    arr := p.mq.Wait(time.Millisecond, 1, p.opt.BatchingN)
     if len(arr) == 0 {
         return
     }
 
     bigData := bytes.NewBuffer(nil)
+    p.lastBatching = len(arr)
     for _, val := range arr {
         data := val.([]byte)
         bigData.Write(data)
@@ -147,4 +153,8 @@ func (p *Conn) Close() error {
 
 func (p *Conn) Error() error {
     return p.err
+}
+
+func (p *Conn) String() string {
+    return fmt.Sprintf("batching:%d", p.lastBatching)
 }

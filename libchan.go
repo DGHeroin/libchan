@@ -8,7 +8,6 @@ type (
     }
     Chan interface {
         Send([]byte) error
-        //SendBatching([]byte) error
         Read() ([]byte, error)
         Close() error
     }
