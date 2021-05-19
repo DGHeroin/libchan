@@ -7,7 +7,7 @@ import (
     "github.com/DGHeroin/libchan/common"
     "github.com/xtaci/kcp-go/v5"
     "golang.org/x/crypto/pbkdf2"
-    "log"
+    "net"
     "net/url"
     "sync"
     "sync/atomic"
@@ -46,36 +46,51 @@ func (p *kcpTransport) init() {
     }
     p.u = u
 }
-
-func (p *kcpTransport) serve() {
+func (p *kcpTransport) getBlockCrypt() kcp.BlockCrypt {
     u := p.u
     password := u.Query().Get("password")
     salt := u.Query().Get("salt")
+    if password == "" || salt == "" {
+        return nil
+    }
     key := pbkdf2.Key([]byte(password), []byte(salt), 1024, 32, sha1.New)
     block, _ := kcp.NewAESBlockCrypt(key)
-    if listener, err := kcp.ListenWithOptions(u.Host, block, 10, 3); err == nil {
+    return block
+}
+func (p *kcpTransport) serve() {
+    block := p.getBlockCrypt()
+    if block == nil {
+        listener, err := kcp.Listen(p.u.Host)
+        if err != nil {
+            return
+        }
         p.closer = listener
         for {
-            s, err := listener.AcceptKCP()
-            if err != nil {
-                log.Fatal(err)
+            s, err2 := listener.Accept()
+            if err2 != nil {
+                break
             }
             go p.handleAcceptSession(s)
         }
     } else {
-        log.Println("server err:", err)
+        listener, err := kcp.ListenWithOptions(p.u.Host, block, 10, 3)
+        if err != nil {
+            return
+        }
+        p.closer = listener
+        for {
+            s, err2 := listener.AcceptKCP()
+            if err2 != nil {
+                break
+            }
+            go p.handleAcceptSession(s)
+        }
     }
 }
 
-func (p *kcpTransport) handleAcceptSession(conn *kcp.UDPSession) {
-    u := p.u
-    opt := &common.ConnOption{
-        AutoReconnect: common.UrlBool(u, "auto", true),
-        ReadTimeout: common.UrlDurationSecond(u, "rtime", time.Second*3),
-        WriteTimeout: common.UrlDurationSecond(u, "wtime", time.Second*3),
-    }
+func (p *kcpTransport) handleAcceptSession(conn net.Conn) {
+    opt := common.ParseConnOption(p.u)
     p.setupConn(conn)
-
     cli := common.NewConn(p.ctx, conn, opt)
     go func() {
         p.acceptCh <- cli
@@ -90,7 +105,11 @@ func (p *kcpTransport) Accept() Chan {
     cli := <-p.acceptCh
     return cli
 }
-func (p *kcpTransport) setupConn(conn *kcp.UDPSession) {
+func (p *kcpTransport) setupConn(conn net.Conn) {
+    cc, ok := conn.(*kcp.UDPSession)
+    if cc == nil || !ok {
+        return
+    }
     //普通模式
     //SetNoDelay(32, 32, 0, 40, 0, 0, 100, 1400)
     //极速模式
@@ -104,17 +123,8 @@ func (p *kcpTransport) setupConn(conn *kcp.UDPSession) {
 }
 
 func (p *kcpTransport) Dial() (Chan, error) {
-    u := p.u
-    password := common.UrlString(u, "password", "")
-    salt := common.UrlString(u, "salt", "")
-    key := pbkdf2.Key([]byte(password), []byte(salt), 1024, 32, sha1.New)
-    block, _ := kcp.NewAESBlockCrypt(key)
-
-    opt := &common.ConnOption{
-        AutoReconnect: common.UrlBool(u, "auto", true),
-        ReadTimeout: common.UrlDurationSecond(u, "rtime", time.Second*3),
-        WriteTimeout: common.UrlDurationSecond(u, "wtime", time.Second*3),
-    }
+    block := p.getBlockCrypt()
+    opt := common.ParseConnOption(p.u)
     cli := common.NewConn(p.ctx, nil, opt)
     var (
         dial        func() error
@@ -126,7 +136,7 @@ func (p *kcpTransport) Dial() (Chan, error) {
         if atomic.LoadInt32(&isDialing) == 1 {
             return nil
         }
-        if conn, err := kcp.DialWithOptions(u.Host, block, 10, 3); err == nil {
+        if conn, err := kcp.DialWithOptions(p.u.Host, block, 10, 3); err == nil {
             p.closer = cli
             cli.SetConn(conn)
             p.setupConn(conn)

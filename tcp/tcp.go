@@ -4,7 +4,6 @@ import (
     "context"
     . "github.com/DGHeroin/libchan"
     "github.com/DGHeroin/libchan/common"
-    "log"
     "net"
     "net/url"
     "sync"
@@ -47,19 +46,18 @@ func (p *tcpTransport) serve() {
     u := p.u
     if listener, err := net.Listen("tcp", u.Host); err == nil {
         for {
-            s, err := listener.Accept()
-            if err != nil {
-                log.Fatal(err)
+            s, err2 := listener.Accept()
+            if err2 != nil {
+                break
             }
             go p.handleAcceptSession(s)
         }
-    } else {
-        log.Println("server err:", err)
     }
 }
 
 func (p *tcpTransport) handleAcceptSession(conn net.Conn) {
-    cli := common.NewConn(p.ctx, conn, nil)
+    opt := common.ParseConnOption(p.u)
+    cli := common.NewConn(p.ctx, conn, opt)
     go func() {
         p.acceptCh <- cli
     }()
@@ -77,7 +75,8 @@ func (p *tcpTransport) Accept() Chan {
 func (p *tcpTransport) Dial() (Chan, error) {
     u := p.u
     if conn, err := net.Dial("tcp", u.Host); err == nil {
-        cli := common.NewConn(p.ctx, conn, nil)
+        opt := common.ParseConnOption(p.u)
+        cli := common.NewConn(p.ctx, conn, opt)
         p.closer = cli
         go func() {
             defer conn.Close()
