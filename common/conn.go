@@ -5,7 +5,6 @@ import (
     "context"
     "fmt"
     "net"
-    "net/url"
     "sync"
     "time"
 )
@@ -20,40 +19,9 @@ type (
         opt          *ConnOption
         lastBatching int
         protocol     protocol
-        closeOnce sync.Once
-    }
-    ConnOption struct {
-        AutoReconnect bool // 自动重连
-        ReadTimeout   time.Duration
-        WriteTimeout  time.Duration
-        Batching      bool
-        BatchingWait  int
-        BatchingN     int
-        ProtocolType  int
+        closeOnce    sync.Once
     }
 )
-
-func defaultConnOption() *ConnOption {
-    return &ConnOption{
-        AutoReconnect: true,
-        ReadTimeout:   time.Second * 30,
-        WriteTimeout:  time.Second * 30,
-        Batching:      true,
-        BatchingWait:  1000 * 100,
-        BatchingN:     1000 * 100,
-        ProtocolType:  0,
-    }
-}
-
-func ParseConnOption(u *url.URL) *ConnOption {
-    return &ConnOption{
-        AutoReconnect: UrlBool(u, "auto", true),
-        ReadTimeout:   UrlDurationSecond(u, "rtime", time.Second*3),
-        WriteTimeout:  UrlDurationSecond(u, "wtime", time.Second*3),
-        ProtocolType:  UrlInt(u, "protocol", 0),
-        Batching:      UrlBool(u, "batching", false),
-    }
-}
 
 func NewConn(ctx context.Context, conn net.Conn, opt *ConnOption) *Conn {
     if opt == nil {
@@ -80,12 +48,14 @@ func (p *Conn) Send(data []byte) error {
     if p.opt.Batching {
         return p.sendBatching(data)
     }
+    data = doCompression(p.opt.Compression, data)
     _ = p.conn.SetWriteDeadline(time.Now().Add(p.opt.WriteTimeout))
     _, err := p.protocol.Send(p.conn, data)
     return err
 }
 
 func (p *Conn) sendBatching(data []byte) error {
+    data = doCompression(p.opt.Compression, data)
     msg := p.protocol.Pack(data)
     p.mq.Add(msg)
     return nil
@@ -118,6 +88,7 @@ func (p *Conn) DoRead() {
         if err != nil {
             break
         }
+        msg = doUnCompression(p.opt.Compression, msg)
         p.chRecv <- msg
     }
 }
@@ -161,5 +132,5 @@ func (p *Conn) Error() error {
 }
 
 func (p *Conn) String() string {
-    return fmt.Sprintf("batching:%d", p.lastBatching)
+    return fmt.Sprintf("[%p] bat:%d", p, p.lastBatching)
 }

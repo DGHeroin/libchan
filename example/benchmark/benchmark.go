@@ -2,8 +2,8 @@ package main
 
 import (
     "github.com/DGHeroin/libchan"
-    "github.com/DGHeroin/libchan/transport"
     "github.com/DGHeroin/libchan/common"
+    "github.com/DGHeroin/libchan/transport"
     "log"
     "sync/atomic"
     "time"
@@ -15,7 +15,7 @@ var (
     pktQPS      uint32
     bandwidth   uint32
     latestBytes []byte
-    rawurl = "kcp://127.0.0.1:6000?password=aoe&salt=123"
+    rawurl      = "kcp://127.0.0.1:6000?password=aoe&salt=123&compression=0"
 )
 
 func client() {
