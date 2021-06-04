@@ -17,11 +17,11 @@ func client() {
     go func() {
         for {
             time.Sleep(time.Second)
-            ch.Send([]byte(fmt.Sprintf("Hello:%v", time.Now())))
+            ch.Write([]byte(fmt.Sprintf("Hello:%v", time.Now())))
         }
     }()
     for {
-        data, err := ch.Read()
+        data, err := ch.ReadMessage()
         if err != nil {
             return
         }
@@ -35,12 +35,12 @@ func server() {
         remote := ch.Accept()
         go func(remote libchan.Chan) {
             for {
-                data, err := remote.Read()
+                data, err := remote.ReadMessage()
                 if err != nil {
                     return
                 }
                 log.Println("server recv:", string(data))
-                remote.Send(data)
+                remote.Write(data)
             }
         }(remote)
     }

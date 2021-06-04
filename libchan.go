@@ -1,15 +1,17 @@
 package libchan
 
-import "context"
+import (
+    "context"
+    "io"
+)
 
 type (
     Closer interface {
         Close() error
     }
     Chan interface {
-        Send([]byte) error
-        Read() ([]byte, error)
-        Close() error
+        io.ReadWriteCloser
+        ReadMessage() ([]byte, error)
     }
     Transport interface {
         Accept() Chan

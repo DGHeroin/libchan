@@ -39,12 +39,13 @@ func client() {
     sendData := make([]byte, 1024)
     go func() {
         for {
-            ch.Send(sendData)
+            ch.Write(sendData)
             atomic.AddUint32(&sendQPS, 1)
         }
     }()
     for {
-        _, err := ch.Read()
+        buf := make([]byte, 0)
+        _, err := ch.Read(buf)
         if err != nil {
             return
         }
@@ -57,14 +58,15 @@ func server() {
         remote := ch.Accept()
         go func(remote libchan.Chan) {
             for {
-                data, err := remote.Read()
+                data := make([]byte, 0)
+                _, err := remote.Read(data)
                 if err != nil {
                     return
                 }
                 atomic.AddUint32(&pktQPS, 1)
                 latestBytes = data
                 atomic.AddUint32(&bandwidth, uint32(len(data)))
-                remote.Send(data)
+                remote.Write(data)
             }
         }(remote)
     }

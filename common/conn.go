@@ -44,14 +44,13 @@ func (p *Conn) SetConn(conn net.Conn) {
     p.conn = conn
 }
 
-func (p *Conn) Send(data []byte) error {
+func (p *Conn) Write(data []byte) (int, error) {
     if p.opt.Batching {
-        return p.sendBatching(data)
+        return len(data), p.sendBatching(data)
     }
     data = doCompression(p.opt.Compression, data)
     _ = p.conn.SetWriteDeadline(time.Now().Add(p.opt.WriteTimeout))
-    _, err := p.protocol.Send(p.conn, data)
-    return err
+    return p.protocol.Send(p.conn, data)
 }
 
 func (p *Conn) sendBatching(data []byte) error {
@@ -60,8 +59,16 @@ func (p *Conn) sendBatching(data []byte) error {
     p.mq.Add(msg)
     return nil
 }
-
-func (p *Conn) Read() ([]byte, error) {
+func (p *Conn) Read(data []byte) (int, error) {
+    pkt, err := p.ReadMessage()
+    if err != nil {
+        return -1, err
+    }
+    sz := len(pkt)
+    copy(data, pkt)
+    return sz, nil
+}
+func (p *Conn) ReadMessage() (  []byte, error) {
     pkt, ok := <-p.chRecv
     if !ok {
         // closed
